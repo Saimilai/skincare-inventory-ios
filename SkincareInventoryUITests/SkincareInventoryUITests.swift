@@ -54,6 +54,30 @@ final class SkincareInventoryUITests: XCTestCase {
         close.tap()
     }
 
+    private func assertEntryFitsVisibleWebView(keyboardVisible: Bool) {
+        let webView = app.webViews.firstMatch
+        let heading = webView.staticTexts["新增物品"]
+        let next = app.buttons["下一步 · 核对价格"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        // isHittable alone accepted a footer covered by the keyboard. Check
+        // actual screen rectangles as WebKit settles after focus/keyboard changes.
+        let fits = NSPredicate { [self] _, _ in
+            let bounds = webView.frame
+            guard bounds.height > 0, heading.frame.height > 0, next.frame.height > 0,
+                  bounds.minY > self.app.frame.minY,
+                  heading.frame.minY >= bounds.minY - 1,
+                  next.frame.maxY <= bounds.maxY + 1 else { return false }
+            return !keyboardVisible || (self.app.keyboards.firstMatch.exists &&
+                next.frame.maxY <= self.app.keyboards.firstMatch.frame.minY + 1)
+        }
+        let result = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: fits, object: nil)], timeout: 10
+        )
+        if result != .completed { captureDiagnostics("Entry exceeded visible native viewport") }
+        XCTAssertEqual(result, .completed, "The complete form heading and footer must fit the safe area above the keyboard.")
+    }
+
     func testPersistentStorageSurvivesRelaunchAndBackground() {
         tap("Test import fixture")
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
@@ -150,11 +174,14 @@ final class SkincareInventoryUITests: XCTestCase {
         tap("下一步 · 核对商品")
         let name = app.webViews.textFields["产品名称 *"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
+        assertEntryFitsVisibleWebView(keyboardVisible: false)
+        let fullViewport = app.webViews.firstMatch.frame
         name.tap()
         name.typeText("Simulator entry cream")
         XCTAssertEqual(name.value as? String, "Simulator entry cream")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         XCTAssertTrue(app.buttons["下一步 · 核对价格"].isHittable, "The entry footer must stay above the keyboard.")
+        assertEntryFitsVisibleWebView(keyboardVisible: true)
         let keyboard = XCTAttachment(screenshot: app.screenshot())
         keyboard.name = "Inventory entry with keyboard"
         keyboard.lifetime = .keepAlways
@@ -167,6 +194,13 @@ final class SkincareInventoryUITests: XCTestCase {
         } else {
             app.webViews.staticTexts["基本信息"].tap()
         }
+        assertEntryFitsVisibleWebView(keyboardVisible: false)
+        let restored = NSPredicate { [self] _, _ in
+            abs(self.app.webViews.firstMatch.frame.maxY - fullViewport.maxY) <= 1
+        }
+        XCTAssertEqual(XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: restored, object: nil)], timeout: 10
+        ), .completed, "Dismissing the keyboard must restore the full safe viewport.")
         tap("下一步 · 核对价格")
         let save = app.buttons["确认并加入库存"]
         if !save.waitForExistence(timeout: 10) {

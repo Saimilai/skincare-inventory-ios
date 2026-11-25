@@ -28,6 +28,9 @@ final class InventoryViewController: UIViewController {
     private var hasLoadedPage = false
     private var compatibilityScriptAvailable = false
     private var navigationGeneration = 0
+    private var webViewBottomConstraint: NSLayoutConstraint?
+    private var keyboardFrameInScreen: CGRect?
+    private var keyboardObservers: [NSObjectProtocol] = []
     private lazy var fileShareCoordinator = FileShareCoordinator(presenter: self)
     private let backgroundColor = UIColor(red: 9 / 255, green: 11 / 255, blue: 10 / 255, alpha: 1)
 
@@ -39,6 +42,7 @@ final class InventoryViewController: UIViewController {
         overrideUserInterfaceStyle = .dark
         configureWebView()
         configureOverlays()
+        observeKeyboard()
         if compatibilityScriptAvailable {
             loadWebsite()
         } else {
@@ -49,8 +53,19 @@ final class InventoryViewController: UIViewController {
 
     deinit {
         bannerDismissal?.cancel()
+        keyboardObservers.forEach { NotificationCenter.default.removeObserver($0) }
         webView?.configuration.userContentController
             .removeScriptMessageHandler(forName: AppConfig.bridgeHandlerName)
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        updateWebViewBottomConstraint()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateWebViewBottomConstraint()
     }
 
     private func configureWebView() {
@@ -70,6 +85,29 @@ final class InventoryViewController: UIViewController {
             ))
             compatibilityScriptAvailable = true
         }
+
+        // UIKit owns the visible rectangle in this app. The website normally
+        // includes its own safe-area padding for a full-screen Safari viewport;
+        // keeping that padding here would inset every header and footer twice.
+        // This only changes this trusted document's presentation, not the site.
+        let nativeViewportScript = """
+        (function () {
+          if (window.top !== window || location.origin !== 'https://\(AppConfig.trustedHost)') return;
+          function applyInsets() {
+            var root = document.documentElement;
+            if (!root) return;
+            root.style.setProperty('--safe-t', '0px', 'important');
+            root.style.setProperty('--safe-b', '0px', 'important');
+          }
+          applyInsets();
+          document.addEventListener('DOMContentLoaded', applyInsets, {once: true});
+        })();
+        """
+        contentController.addUserScript(WKUserScript(
+            source: nativeViewportScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
 
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-ui-testing"),
@@ -94,6 +132,7 @@ final class InventoryViewController: UIViewController {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.isOpaque = false
+        webView.clipsToBounds = true
         webView.backgroundColor = backgroundColor
         webView.scrollView.backgroundColor = backgroundColor
         webView.scrollView.contentInsetAdjustmentBehavior = .never
@@ -101,13 +140,67 @@ final class InventoryViewController: UIViewController {
         webView.allowsBackForwardNavigationGestures = false
         webView.accessibilityIdentifier = "inventory.webView"
         view.addSubview(webView)
-        // The website already accounts for env(safe-area-inset-*).
+        let bottomConstraint = webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+        webViewBottomConstraint = bottomConstraint
         NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: view.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            bottomConstraint
         ])
+    }
+
+    private func observeKeyboard() {
+        for name in [UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardWillHideNotification] {
+            keyboardObservers.append(NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                self?.keyboardWillChange(notification)
+            })
+        }
+    }
+
+    private func keyboardWillChange(_ notification: Notification) {
+        guard isViewLoaded else { return }
+        view.layoutIfNeeded()
+        if notification.name == UIResponder.keyboardWillHideNotification {
+            keyboardFrameInScreen = nil
+        } else {
+            keyboardFrameInScreen = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+        }
+        updateWebViewBottomConstraint()
+
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.25
+        let curve = (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.uintValue ?? 0
+        let options = UIView.AnimationOptions(rawValue: curve << 16)
+            .union([.beginFromCurrentState, .allowUserInteraction])
+        UIView.animate(withDuration: duration, delay: 0, options: options, animations: {
+            self.view.layoutIfNeeded()
+        })
+    }
+
+    private func updateWebViewBottomConstraint() {
+        guard let bottomConstraint = webViewBottomConstraint else { return }
+        var extraBottomInset: CGFloat = 0
+        if let screenFrame = keyboardFrameInScreen, let window = view.window {
+            // Keyboard notifications use screen coordinates, including in split
+            // view and after rotation. Convert to this view before intersecting.
+            let keyboardFrame = window.screen.coordinateSpace.convert(screenFrame, to: view)
+            let overlap = view.bounds.intersection(keyboardFrame)
+            let coversWidth = !overlap.isNull && overlap.width >= view.bounds.width - 1
+            let touchesBottom = !overlap.isNull && overlap.maxY >= view.bounds.maxY - 1
+            if coversWidth && touchesBottom {
+                // A floating or narrow iPad keyboard must not collapse the whole
+                // page. Only a docked keyboard replaces its bottom safe area.
+                extraBottomInset = max(0, view.bounds.maxY - overlap.minY - view.safeAreaInsets.bottom)
+            }
+        }
+        let constant = -extraBottomInset
+        if abs(bottomConstraint.constant - constant) > 0.5 {
+            bottomConstraint.constant = constant
+        }
     }
 
     private func configureOverlays() {

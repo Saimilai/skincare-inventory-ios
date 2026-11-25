@@ -40,7 +40,7 @@ def context():
         "source_commit": source,
         "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
         "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
-        "app_version": os.environ.get("APP_VERSION", "1.0.0"),
+        "app_version": os.environ.get("APP_VERSION", "1.0.1"),
         "build_number": os.environ.get("BUILD_NUMBER", os.environ.get("GITHUB_RUN_NUMBER", "1")),
     }
 
@@ -217,6 +217,7 @@ def report():
     lines = [
         "# 库存手记 IPA 验证报告", "",
         "- App 版本：{}（构建 {}）".format(metadata["app_version"], metadata["build_number"]),
+        "- 1.0.1 更新：修复表单录入时的键盘安全区域布局，避免操作区域被键盘遮挡。",
         "- 源码提交：{}".format(metadata["source_commit"]),
         "- 测试与打包运行 ID：{}".format(metadata["run_id"]),
         "- Xcode：16.4；设备架构：arm64；最低系统：iOS 14.0。",

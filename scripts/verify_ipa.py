@@ -183,7 +183,7 @@ def _verify_signature(archive: zipfile.ZipFile, members: dict, app_folder: str) 
 def inspect_ipa(
     ipa_path: str | Path,
     expected_bundle_id: str = "io.github.saimilai.skincareinventory",
-    expected_version: str = "1.0.0",
+    expected_version: str = "1.0.1",
     expected_build: str | None = None,
     verify_signature: bool = True,
 ) -> dict:
@@ -280,7 +280,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ipa", type=Path)
     parser.add_argument("--bundle-id", default="io.github.saimilai.skincareinventory")
-    parser.add_argument("--version", default="1.0.0")
+    parser.add_argument("--version", default="1.0.1")
     parser.add_argument("--build")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
