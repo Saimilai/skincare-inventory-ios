@@ -80,8 +80,10 @@ finish_build() {
 }
 trap finish_build EXIT
 
-xcodebuild -version | tee "$log_dir/toolchain.log"
-if ! xcodebuild -version | head -n 1 | grep -Fxq "Xcode 16.4"; then
+xcode_version_output="$(xcodebuild -version)"
+printf '%s\n' "$xcode_version_output" | tee "$log_dir/toolchain.log"
+xcode_version_first_line="${xcode_version_output%%$'\n'*}"
+if [[ "$xcode_version_first_line" != "Xcode 16.4" ]]; then
   echo "The selected toolchain must be Xcode 16.4." >&2
   exit 1
 fi

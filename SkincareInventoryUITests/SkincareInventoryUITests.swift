@@ -51,7 +51,7 @@ final class SkincareInventoryUITests: XCTestCase {
         // outside this app's XCTest accessibility tree on the hosted runner.
         // Tap the close control at its stable upper-right position instead of
         // waiting on an element XCTest can never expose through `app`.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.535)).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.502)).tap()
         let harness = app.buttons["Test confirm"]
         let returned = NSPredicate { _, _ in harness.isHittable }
         let result = XCTWaiter.wait(
