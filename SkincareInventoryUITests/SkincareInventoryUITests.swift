@@ -177,8 +177,16 @@ final class SkincareInventoryUITests: XCTestCase {
         assertEntryFitsVisibleWebView(keyboardVisible: false)
         let fullViewport = app.webViews.firstMatch.frame
         name.tap()
+        assertEntryFitsVisibleWebView(keyboardVisible: true)
         name.typeText("Simulator entry cream")
-        XCTAssertEqual(name.value as? String, "Simulator entry cream")
+        let inputComplete = NSPredicate { _, _ in
+            name.value as? String == "Simulator entry cream"
+        }
+        let inputResult = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: inputComplete, object: nil)], timeout: 10
+        )
+        if inputResult != .completed { captureDiagnostics("Entry text did not reach the expected value") }
+        XCTAssertEqual(inputResult, .completed, "WebKit must expose the complete entered product name.")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         XCTAssertTrue(app.buttons["下一步 · 核对价格"].isHittable, "The entry footer must stay above the keyboard.")
         assertEntryFitsVisibleWebView(keyboardVisible: true)
