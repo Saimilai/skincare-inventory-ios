@@ -261,6 +261,9 @@ final class InventoryViewController: UIViewController {
         result: FileShareResult,
         generation: Int
     ) {
+        #if DEBUG
+        print("[InventoryFileBridge] completion request=\(requestID) result=\(result.bridgeResponse) generation=\(generation)/\(navigationGeneration)")
+        #endif
         if case .error(let message) = result { showNotice(message) }
         guard generation == navigationGeneration, AppConfig.isTrusted(webView.url),
               let data = try? JSONSerialization.data(withJSONObject: [requestID, result.bridgeResponse]),
@@ -285,10 +288,20 @@ extension InventoryViewController: WKScriptMessageHandler {
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
+        #if DEBUG
+        let debugPayload = message.body as? [String: Any]
+        let debugOrigin = message.frameInfo.securityOrigin
+        let debugFilename = debugPayload?["filename"] as? String ?? "<missing>"
+        print("[InventoryFileBridge] received handler=\(message.name) fields=\(debugPayload?.keys.sorted() ?? []) filename=\(debugFilename)")
+        print("[InventoryFileBridge] origin=\(debugOrigin.protocol)://\(debugOrigin.host):\(debugOrigin.port) mainFrame=\(message.frameInfo.isMainFrame) trusted=\(isTrusted(message.frameInfo))")
+        #endif
         guard message.name == AppConfig.bridgeHandlerName, isTrusted(message.frameInfo),
               let payload = message.body as? [String: Any],
               let requestID = payload["requestId"] as? String,
               !requestID.isEmpty, requestID.utf8.count <= 128 else {
+            #if DEBUG
+            print("[InventoryFileBridge] rejected origin/handler/request metadata")
+            #endif
             return
         }
         let generation = navigationGeneration

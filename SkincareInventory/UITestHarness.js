@@ -23,6 +23,17 @@
     status.style.cssText = 'min-height:40px;white-space:pre-wrap;grid-column:1 / -1;';
     panel.appendChild(status);
     function say(text) { status.textContent = text; }
+    window.addEventListener('error', function (event) {
+      var detail=event.message || (event.error && event.error.message) || 'unknown error';
+      console.error('Inventory UI harness JavaScript error:',detail,event.filename || '',event.lineno || 0);
+      say('javascript:error:'+detail);
+    });
+    window.addEventListener('unhandledrejection', function (event) {
+      var reason=event.reason;
+      var detail=reason && (reason.stack || reason.message) || String(reason);
+      console.error('Inventory UI harness unhandled rejection:',detail);
+      say('javascript:rejection:'+detail);
+    });
     function button(label, run) {
       var element = document.createElement('button');
       element.textContent = label;
@@ -43,7 +54,19 @@
       navigator.share({files:[file]}).then(function () {say('share:shared');},function(error){say('share:'+error.name);});
     });
     button('Test download JSON', function () {
-      document.getElementById('btn-export').click();
+      try {
+        api.switchTab('me');
+        var exportButton=document.getElementById('btn-export');
+        if(!exportButton || typeof exportButton.onclick!=='function')throw new Error('export handler missing');
+        if(exportButton.disabled)throw new Error('export button disabled');
+        exportButton.click();
+        var detail=lastJSONExport ? lastJSONExport.size+':'+lastJSONExport.type : 'missing';
+        console.log('Inventory UI harness JSON captured:',detail);
+        say('json:captured:'+detail);
+      } catch(error) {
+        console.error('Inventory UI harness JSON export failed:',error.stack || error.message || String(error));
+        say('json:error:'+(error.message || String(error)));
+      }
     });
     button('Test download XLSX', async function () {
       var blob=await InventoryExcel.create(api.excelRows());

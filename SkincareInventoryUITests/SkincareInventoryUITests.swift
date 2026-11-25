@@ -38,9 +38,19 @@ final class SkincareInventoryUITests: XCTestCase {
         button.tap()
     }
 
+    private func captureDiagnostics(_ title: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = title
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        print(app.debugDescription)
+    }
+
     private func cancelShareSheet() {
         let close = app.buttons.matching(NSPredicate(format:"label == 'Close' OR label == '关闭' OR label == 'Cancel' OR label == '取消'")).firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 10), "System activity sheet should have a close control.")
+        let found = close.waitForExistence(timeout: 20)
+        if !found { captureDiagnostics("Missing system share sheet") }
+        XCTAssertTrue(found, "System activity sheet should have a close control.")
         close.tap()
     }
 
@@ -138,17 +148,30 @@ final class SkincareInventoryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["库存清单"].waitForExistence(timeout:10))
         tap("新增物品")
         tap("下一步 · 核对商品")
-        let name = app.webViews.textFields.firstMatch
+        let name = app.webViews.textFields["产品名称 *"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
         name.typeText("Simulator entry cream")
+        XCTAssertEqual(name.value as? String, "Simulator entry cream")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         XCTAssertTrue(app.buttons["下一步 · 核对价格"].isHittable, "The entry footer must stay above the keyboard.")
         let keyboard = XCTAttachment(screenshot: app.screenshot())
         keyboard.name = "Inventory entry with keyboard"
         keyboard.lifetime = .keepAlways
         add(keyboard)
+        // Keep the keyboard layout check above, then leave editing before
+        // navigating so XCTest uses the footer's settled screen position.
+        let done = app.buttons.matching(NSPredicate(format: "label == 'Done' OR label == '完成'")).firstMatch
+        if done.exists {
+            done.tap()
+        } else {
+            app.webViews.staticTexts["基本信息"].tap()
+        }
         tap("下一步 · 核对价格")
+        let save = app.buttons["确认并加入库存"]
+        if !save.waitForExistence(timeout: 10) {
+            captureDiagnostics("Inventory price step did not open")
+        }
         tap("确认并加入库存")
         XCTAssertTrue(app.staticTexts["Simulator entry cream"].waitForExistence(timeout:10))
         let screenshot = XCTAttachment(screenshot:app.screenshot())

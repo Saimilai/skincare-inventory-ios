@@ -41,6 +41,7 @@ print_failure_diagnostics() {
       "$log_dir/simulator-tests.log" | tail -n 12 || true
   fi
   if [[ -d "$result_bundle" ]]; then
+    mkdir -p "$project_root/build/diagnostics"
     if xcrun xcresulttool get test-results summary --path "$result_bundle" --compact \
       > "$log_dir/failure-summary.json" 2> "$log_dir/failure-summary.log"; then
       python3 - "$log_dir/failure-summary.json" <<'PY'
@@ -59,6 +60,11 @@ PY
     else
       echo "The interrupted xcresult bundle has no readable test summary."
     fi
+    cp "$log_dir/failure-summary.json" "$project_root/build/diagnostics/summary.json" 2>/dev/null || true
+    xcrun xcresulttool export attachments --path "$result_bundle" \
+      --output-path "$project_root/build/diagnostics/attachments" 2>&1 \
+      | tee "$log_dir/failure-attachments.log" || true
+    cp "$log_dir/simulator-tests.log" "$project_root/build/diagnostics/simulator-tests.log" 2>/dev/null || true
   fi
 }
 
