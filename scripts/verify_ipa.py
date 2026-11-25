@@ -20,6 +20,20 @@ import tempfile
 import zipfile
 
 
+REQUIRED_UPDATE_ENTITLEMENTS = {
+    "platform-application": True,
+    "com.apple.private.security.no-sandbox": True,
+    "com.apple.private.persona-mgmt": True,
+    "com.apple.private.security.storage.AppDataContainers": True,
+}
+MACHO_MAGICS = {
+    b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",  # 32-bit, either byte order
+    b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe",  # 64-bit, either byte order
+    b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca",  # FAT/universal
+    b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca",  # FAT64/universal
+}
+
+
 class VerificationError(ValueError):
     """An IPA does not match the expected device application."""
 
@@ -137,7 +151,22 @@ def _checked_members(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     return members
 
 
-def _verify_signature(archive: zipfile.ZipFile, members: dict, app_folder: str) -> dict:
+def validate_update_entitlements(value, bundle_id):
+    """Require the reviewed update capability without changing container identity."""
+    if not isinstance(value, dict):
+        raise VerificationError("The executable entitlements must be a dictionary.")
+    expected = {**REQUIRED_UPDATE_ENTITLEMENTS, "application-identifier": bundle_id}
+    if set(value) != set(expected):
+        raise VerificationError("The executable entitlements differ from the reviewed update allowlist.")
+    if value.get("application-identifier") != bundle_id or any(
+        value.get(key) is not True for key in REQUIRED_UPDATE_ENTITLEMENTS
+    ):
+        raise VerificationError("The executable update entitlements or application identifier are incorrect.")
+    return value
+
+
+def _verify_signature(archive: zipfile.ZipFile, members: dict, app_folder: str,
+                      bundle_id: str) -> dict:
     if platform.system() != "Darwin":
         raise VerificationError("Formal signature verification requires macOS codesign.")
     with tempfile.TemporaryDirectory(prefix="skincare-ipa-check-") as temporary:
@@ -172,18 +201,33 @@ def _verify_signature(archive: zipfile.ZipFile, members: dict, app_folder: str) 
             raise VerificationError("codesign verification failed:\n" + verification_output + "\n" + detail_output)
         if "Signature=adhoc" not in detail_output:
             raise VerificationError("The package should have an ad hoc signature for TrollStore to replace.")
+        dumped = subprocess.run(
+            ["/usr/bin/codesign", "--display", "--entitlements", ":-", str(app_path)],
+            capture_output=True,
+            check=False,
+        )
+        if dumped.returncode:
+            raise VerificationError("codesign could not export the executable entitlements.")
+        try:
+            entitlements = plistlib.loads(dumped.stdout)
+        except (plistlib.InvalidFileException, ValueError, TypeError) as exc:
+            raise VerificationError("codesign exported malformed or missing executable entitlements.") from exc
+        validate_update_entitlements(entitlements, bundle_id)
         return {
             "status": "passed",
             "type": "ad hoc",
             "verification_output": verification_output,
             "signature_details": detail_output,
+            "entitlements_status": "passed",
+            "entitlements": entitlements,
+            "self_update_execution_on_device": "not tested",
         }
 
 
 def inspect_ipa(
     ipa_path: str | Path,
     expected_bundle_id: str = "io.github.saimilai.skincareinventory",
-    expected_version: str = "1.0.0",
+    expected_version: str = "1.0.1",
     expected_build: str | None = None,
     verify_signature: bool = True,
 ) -> dict:
@@ -218,6 +262,8 @@ def inspect_ipa(
             raise VerificationError("Cannot parse the app's Info.plist.") from exc
         if not isinstance(info, dict):
             raise VerificationError("Info.plist must contain a dictionary.")
+        if any(key.startswith("TSRoot") for key in info):
+            raise VerificationError("This app must not declare embedded TrollStore root helper binaries.")
         if info.get("CFBundlePackageType") != "APPL":
             raise VerificationError("CFBundlePackageType must be APPL.")
         if info.get("CFBundleIdentifier") != expected_bundle_id:
@@ -247,6 +293,12 @@ def inspect_ipa(
             raise VerificationError("The declared app executable is missing.")
         if not (members[executable_name].external_attr >> 16) & stat.S_IXUSR:
             raise VerificationError("The executable permission was not preserved in the IPA.")
+        for name, member in members.items():
+            if not member.is_dir() and name != executable_name:
+                with archive.open(member) as source:
+                    magic = source.read(4)
+                if magic in MACHO_MAGICS:
+                    raise VerificationError("Unexpected additional Mach-O code/root helper in this app: " + name)
         macho = parse_macho(archive.read(executable_name))
         if _version_tuple(macho["minimum_ios"]) != _version_tuple(minimum):
             raise VerificationError("Info.plist and Mach-O minimum iOS versions disagree.")
@@ -255,9 +307,13 @@ def inspect_ipa(
         if app_folder + "/_CodeSignature/CodeResources" not in members:
             raise VerificationError("The app resource seal is missing.")
         signature = (
-            _verify_signature(archive, members, app_folder)
+            _verify_signature(archive, members, app_folder, expected_bundle_id)
             if verify_signature
-            else {"status": "not_run", "reason": "Static test explicitly disabled macOS codesign."}
+            else {
+                "status": "not_run", "entitlements_status": "not_run",
+                "reason": "Static test explicitly disabled macOS codesign and entitlement verification.",
+                "self_update_execution_on_device": "not tested",
+            }
         )
     return {
         "status": "passed" if verify_signature else "static_checks_passed",
@@ -271,6 +327,7 @@ def inspect_ipa(
         "build": build,
         "minimum_ios": minimum,
         "macho": macho,
+        "package_code": {"mach_o_binaries": [executable_name], "embedded_root_helpers": False},
         "signature": signature,
         "real_trollstore_device": "not tested",
     }
@@ -280,7 +337,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ipa", type=Path)
     parser.add_argument("--bundle-id", default="io.github.saimilai.skincareinventory")
-    parser.add_argument("--version", default="1.0.0")
+    parser.add_argument("--version", default="1.0.1")
     parser.add_argument("--build")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()

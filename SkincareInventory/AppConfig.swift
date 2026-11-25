@@ -6,6 +6,11 @@ enum AppConfig {
     static let bridgeHandlerName = "inventoryFiles"
     static let compatibilityScriptName = "WebCompatibility"
     static let maximumExportFileBytes = 20 * 1_024 * 1_024
+    static let releasesURL = URL(string: "https://github.com/Saimilai/skincare-inventory-ios/releases/latest")!
+
+    static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1"
+    }
 
     static func isTrusted(_ url: URL?) -> Bool {
         guard let url = url,

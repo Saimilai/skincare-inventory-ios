@@ -14,7 +14,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode_16.4.app/Contents/Developer}"
-export APP_VERSION="${APP_VERSION:-1.0.0}"
+export APP_VERSION="${APP_VERSION:-1.0.1}"
 export BUILD_NUMBER="${BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
   echo "APP_VERSION must be x.y.z; BUILD_NUMBER must be a positive integer." >&2
@@ -192,7 +192,8 @@ build_package() {
     done < <(find "$app_path/Frameworks" -mindepth 1 -maxdepth 1 \
       \( -type f -name '*.dylib' -o -type d -name '*.framework' \) -print0)
   fi
-  /usr/bin/codesign --force --sign - --timestamp=none "$app_path"
+  /usr/bin/codesign --force --sign - --timestamp=none \
+    --entitlements SkincareInventory/Update.entitlements "$app_path"
   /usr/bin/codesign --verify --deep --strict --verbose=2 "$app_path" 2>&1 | tee "$log_dir/codesign.log"
 
   build_phase="IPA packaging"

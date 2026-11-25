@@ -1,8 +1,8 @@
 # 库存 · 在线 IPA
 
-把现有[库存网站](https://skincare-k-test-20261115.pages.dev/)装进独立的 iOS App，供已安装且可正常使用 TrollStore（巨魔）的设备安装。首个正式 App 版本为 `1.0.0`；网页显示的版本由网站发布独立管理。
+把现有[库存网站](https://skincare-k-test-20261115.pages.dev/)装进独立的 iOS App，供已安装且可正常使用 TrollStore（巨魔）的设备安装。首个正式 App 版本为 `1.0.0`；当前 `1.0.1` 新增 App 更新功能。网页显示的版本由网站发布独立管理。
 
-首版包含表单录入时的键盘安全区域适配，操作区域会随键盘调整。更新时使用同一 Bundle ID 覆盖安装。
+保留表单录入时的键盘安全区域适配。App 打开时每天至多自动检查一次新版，不弹窗、不刷新库存；顶部“App 更新”可随时手动检查。下载经 SHA-256 和 IPA 结构校验后，优先在 App 内由你确认并调用已识别的兼容巨魔安装助手覆盖更新，不打开巨魔界面；不兼容时保留系统“打开方式”交接。检查失败可继续使用库存。
 
 App 使用持久化 WKWebView 加载原固定网址。库存保存在这个 App 的本地容器里，关掉再打开仍可读取；网站更新后，重新打开或刷新会加载网站的新内容。打开、重新加载页面需要网络，本工程不承诺离线打开网页。
 
@@ -10,12 +10,13 @@ App 和 Safari 的库存、快照与备份状态相互独立，不会自动同�
 
 ## 安装与使用
 
-从本仓库的 **Releases** 下载 `SkincareInventory-1.0.0-TrollStore.ipa`，在 TrollStore 中安装。完整步骤见 [巨魔安装说明](docs/INSTALL.zh-CN.md)。
+从本仓库的 **Releases** 下载 `SkincareInventory-1.0.1-TrollStore.ipa`，先在 TrollStore 中覆盖安装一次。已经安装 `1.0.0` 的用户需要这次手动覆盖安装，之后即可在 App 内确认后续更新。完整步骤见 [巨魔安装说明](docs/INSTALL.zh-CN.md) 和 [App 内更新说明](docs/SELF-UPDATE.md)。
 
 - 支持 arm64、iOS 14.0 及以上的设备构建；能否用巨魔安装仍取决于设备系统是否受 TrollStore 支持。
 - JSON 备份、Excel 导出与分享接入 iOS 的文件/分享界面，JSON 导入沿用网页的内容校验和覆盖确认。
 - 网页中的备份时间沿用现有网站语义：生成文件或交给系统分享时就可能更新，不能证明文件已存入网盘。请以“文件”或网盘里实际存在、能打开的 JSON 为准。
 - 固定 Bundle ID：`io.github.saimilai.skincareinventory`。覆盖更新时沿用它，避免意外创建第二个独立库存。
+- 更新检查仅向本仓库的 GitHub 公共 Release 获取版本信息和更新文件，不上传库存；草稿、预发布、旧版本、来源不匹配或校验失败的文件不会进入安装路径。下载取消不会清除库存。兼容的官方巨魔安装助手可在 App 内确认覆盖更新；其他环境回退到系统“打开方式”，或手动下载 IPA 后在巨魔覆盖安装。
 
 ## 免费构建
 
@@ -25,7 +26,7 @@ App 和 Safari 的库存、快照与备份状态相互独立，不会自动同�
 
 1. 在公开的 GitHub 仓库中打开 **Actions → Build TrollStore IPA → Run workflow**。
 2. 等待网页测试、Python 单元测试、iOS 18.5 模拟器 UI 测试及设备构建完成。
-3. 在 **Releases → v1.0.0** 下载 IPA、`SHA256SUMS.txt`、`validation.json`、`test-report.md` 和包含模拟器截图的 `simulator-evidence.zip`。同页提供与该提交对应的源码 ZIP。
+3. 在 **Releases → v1.0.1** 下载 IPA、`SHA256SUMS.txt`、`validation.json`、`test-report.md` 和包含模拟器截图的 `simulator-evidence.zip`。同页提供与该提交对应的源码 ZIP。
 
 工作流固定 Xcode 16.4；如果 GitHub 镜像将来移除此版本，构建会失败并要求维护工程，不会自动切换到未知工具链。每次手动运行的构建号递增。同一提交重跑可覆盖附件；源码变化后必须递增工作流中的 App 版本，避免旧 tag 的源码 ZIP 与新 IPA 不一致。
 
@@ -45,7 +46,7 @@ python3 -m unittest discover -s Tests -p 'test_*.py' -v
 完整构建需要 macOS、Xcode 16.4、Node.js、Python 3，以及已安装的 iOS 18.5 iPhone 模拟器：
 
 ```sh
-APP_VERSION=1.0.0 BUILD_NUMBER=1 bash scripts/build_ipa.sh
+APP_VERSION=1.0.1 BUILD_NUMBER=1 bash scripts/build_ipa.sh
 ```
 
 构建脚本运行测试后，为 arm64/iOS 14.0 编译，添加 ad hoc 签名，再生成 `Payload/SkincareInventory.app` 结构的 IPA。它不使用 App Store 导出流程或 provisioning profile；TrollStore 安装时会重签。产物和报告位于 `build/artifacts/`，详细日志位于 `build/logs/`。

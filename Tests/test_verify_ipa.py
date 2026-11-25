@@ -11,6 +11,7 @@ from pathlib import Path
 import plistlib
 import stat
 import struct
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -90,7 +91,7 @@ class IPAValidationTests(unittest.TestCase):
         info = {
             "CFBundlePackageType": "APPL",
             "CFBundleIdentifier": "io.github.saimilai.skincareinventory",
-            "CFBundleShortVersionString": "1.0.0",
+            "CFBundleShortVersionString": "1.0.1",
             "CFBundleVersion": "27",
             "MinimumOSVersion": "14.0",
             "CFBundleSupportedPlatforms": ["iPhoneOS"],
@@ -260,6 +261,113 @@ class IPAValidationTests(unittest.TestCase):
         with mock.patch.object(verify_ipa.platform, "system", return_value="Windows"):
             with self.assertRaisesRegex(verify_ipa.VerificationError, "requires macOS"):
                 verify_ipa.inspect_ipa(self.ipa)
+
+    def signature_results(self, entitlements=None, *, raw=None, dump_status=0):
+        value = entitlements if entitlements is not None else {
+            **verify_ipa.REQUIRED_UPDATE_ENTITLEMENTS,
+            "application-identifier": "io.github.saimilai.skincareinventory",
+        }
+        payload = plistlib.dumps(value) if raw is None else raw
+        return [
+            subprocess.CompletedProcess([], 0, "", "valid on disk\nsatisfies its Designated Requirement"),
+            subprocess.CompletedProcess([], 0, "", "Signature=adhoc\nIdentifier=io.github.saimilai.skincareinventory"),
+            subprocess.CompletedProcess([], dump_status, payload, b"Executable=/temporary/SkincareInventory"),
+        ]
+
+    def inspect_with_codesign_mock(self, responses):
+        with mock.patch.object(verify_ipa.platform, "system", return_value="Darwin"), \
+             mock.patch.object(verify_ipa.subprocess, "run", side_effect=responses):
+            return verify_ipa.inspect_ipa(self.ipa, expected_build="27")
+
+    def test_signed_update_entitlements_are_exported_and_verified(self):
+        self.make_ipa()
+        report = self.inspect_with_codesign_mock(self.signature_results())
+        self.assertEqual(report["status"], "passed")
+        self.assertEqual(report["signature"]["entitlements_status"], "passed")
+        self.assertTrue(report["signature"]["entitlements"]["com.apple.private.persona-mgmt"])
+        self.assertEqual(report["signature"]["self_update_execution_on_device"], "not tested")
+        self.assertFalse(report["package_code"]["embedded_root_helpers"])
+        self.assertEqual(len(report["package_code"]["mach_o_binaries"]), 1)
+
+    def test_signing_source_entitlements_match_reviewed_allowlist(self):
+        value = plistlib.loads((PROJECT_ROOT / "SkincareInventory/Update.entitlements").read_bytes())
+        self.assertEqual(verify_ipa.validate_update_entitlements(
+            value, "io.github.saimilai.skincareinventory"), value)
+
+    def test_missing_or_non_boolean_update_permissions_are_rejected(self):
+        self.make_ipa()
+        expected = {**verify_ipa.REQUIRED_UPDATE_ENTITLEMENTS,
+                    "application-identifier": "io.github.saimilai.skincareinventory"}
+        for key in verify_ipa.REQUIRED_UPDATE_ENTITLEMENTS:
+            for bad_value in (None, False, 1, "true"):
+                with self.subTest(key=key, value=bad_value):
+                    value = expected.copy()
+                    if bad_value is None:
+                        del value[key]
+                    else:
+                        value[key] = bad_value
+                    with self.assertRaisesRegex(verify_ipa.VerificationError, "entitlements"):
+                        self.inspect_with_codesign_mock(self.signature_results(value))
+
+    def test_no_container_and_unreviewed_privileges_are_rejected(self):
+        self.make_ipa()
+        expected = {**verify_ipa.REQUIRED_UPDATE_ENTITLEMENTS,
+                    "application-identifier": "io.github.saimilai.skincareinventory"}
+        for key, flag in (
+            ("com.apple.private.security.no-container", True),
+            ("com.apple.private.security.container-required", False),
+            ("com.apple.private.MobileContainerManager.allowed", True),
+            ("com.apple.private.security.storage.AppBundles", True),
+            ("com.apple.security.exception.files.absolute-path.read-write", ["/"]),
+        ):
+            with self.subTest(key=key), self.assertRaisesRegex(verify_ipa.VerificationError, "allowlist"):
+                self.inspect_with_codesign_mock(self.signature_results({**expected, key: flag}))
+
+    def test_wrong_signed_application_identifier_is_rejected(self):
+        self.make_ipa()
+        for identifier in ("other.app", "TEAM.io.github.saimilai.skincareinventory", ""):
+            with self.subTest(identifier=identifier), self.assertRaisesRegex(
+                verify_ipa.VerificationError, "application identifier"
+            ):
+                self.inspect_with_codesign_mock(self.signature_results({
+                    **verify_ipa.REQUIRED_UPDATE_ENTITLEMENTS, "application-identifier": identifier,
+                }))
+
+    def test_missing_malformed_or_non_dictionary_codesign_entitlements_are_rejected(self):
+        self.make_ipa()
+        for payload in (b"", b"not a plist", plistlib.dumps(["unexpected"]),
+                        b"codesign warning\n" + plistlib.dumps({})):
+            with self.subTest(payload=payload[:20]), self.assertRaisesRegex(
+                verify_ipa.VerificationError, "entitlements"
+            ):
+                self.inspect_with_codesign_mock(self.signature_results(raw=payload))
+        with self.assertRaisesRegex(verify_ipa.VerificationError, "could not export"):
+            self.inspect_with_codesign_mock(self.signature_results(dump_status=1))
+
+    def test_trollstore_root_binary_declarations_are_rejected(self):
+        for key in ("TSRootBinaries", "TSRootExecutables", "TSRootBinary"):
+            with self.subTest(key=key):
+                self.make_ipa(info_overrides={key: ["RootHelper"]})
+                with self.assertRaisesRegex(verify_ipa.VerificationError, "embedded TrollStore root helper"):
+                    self.inspect()
+
+    def test_second_macho_is_rejected_regardless_of_filename_or_architecture(self):
+        for magic in verify_ipa.MACHO_MAGICS:
+            with self.subTest(magic=magic.hex()):
+                self.make_ipa(extra_entries=[("Payload/SkincareInventory.app/Assets/hidden.png", magic + bytes(32))])
+                with self.assertRaisesRegex(verify_ipa.VerificationError, "additional Mach-O"):
+                    self.inspect()
+
+    def test_non_code_assets_are_accepted_without_claiming_entitlements_checked(self):
+        self.make_ipa(extra_entries=[
+            ("Payload/SkincareInventory.app/Assets.car", b"ASSETDATA\x00fixture"),
+            ("Payload/SkincareInventory.app/AppIcon60x60@2x.png", b"\x89PNG\r\n\x1a\nfixture"),
+            ("Payload/SkincareInventory.app/WebCompatibility.js", b"(function () {})();"),
+        ])
+        report = self.inspect()
+        self.assertEqual(report["signature"]["entitlements_status"], "not_run")
+        self.assertEqual(report["signature"]["self_update_execution_on_device"], "not tested")
+        self.assertFalse(report["package_code"]["embedded_root_helpers"])
 
     def test_cli_persists_failure_report_and_returns_nonzero(self):
         self.make_ipa(info_overrides={"CFBundleIdentifier": "wrong.app"})

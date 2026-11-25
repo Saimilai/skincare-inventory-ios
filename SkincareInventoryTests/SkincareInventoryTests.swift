@@ -115,6 +115,40 @@ final class SkincareInventoryTests: XCTestCase {
     }
 
     @MainActor
+    func testUnavailableSelfUpdatePreservesPersistentInventoryAndUpdateEntry() throws {
+        let controller = InventoryViewController()
+        controller.loadViewIfNeeded()
+        let webView = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? WKWebView }.first)
+        webView.stopLoading()
+        defer {
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+        }
+        let store = webView.configuration.websiteDataStore
+        let updateEntry: UIButton = try XCTUnwrap(findView("inventory.updates", in: controller.view))
+        XCTAssertTrue(store.isPersistent)
+        XCTAssertTrue(store === WKWebsiteDataStore.default())
+
+        // Availability only: never call the installer from an automated test.
+        // The simulator branch returns before even looking up a real helper.
+        let reason = InventorySelfUpdateUnavailableReason()
+        #if targetEnvironment(simulator)
+        XCTAssertEqual(reason, "模拟器不支持安装更新，请在巨魔设备上使用。")
+        #else
+        XCTAssertTrue(reason == nil || reason?.isEmpty == false)
+        #endif
+
+        XCTAssertTrue(webView.configuration.websiteDataStore === store)
+        XCTAssertTrue(store.isPersistent)
+        XCTAssertTrue(store === WKWebsiteDataStore.default())
+        XCTAssertTrue(updateEntry.isEnabled)
+        XCTAssertTrue(isVisible(updateEntry))
+        XCTAssertFalse(updateEntry.actions(forTarget: controller, forControlEvent: .touchUpInside)?.isEmpty ?? true,
+                       "The manual update entry must remain available even when native installation is unsupported.")
+    }
+
+    @MainActor
     private func findView<T: UIView>(_ identifier: String, in root: UIView) -> T? {
         if root.accessibilityIdentifier == identifier, let match = root as? T {
             return match

@@ -84,6 +84,22 @@ final class SkincareInventoryUITests: XCTestCase {
         app.alerts.buttons["确认"].tap()
         tap("Test inspect inventory")
         status("inventory:模拟器测试面霜")
+        // Opening/checking/closing the native update screen must leave the
+        // current document and its persistent inventory intact.
+        let updates = app.buttons["inventory.updates"]
+        XCTAssertTrue(updates.waitForExistence(timeout: 5))
+        updates.tap()
+        XCTAssertTrue(app.staticTexts["当前已是最新版本"].waitForExistence(timeout: 10))
+        let closeUpdates = app.buttons["inventory.update.close"]
+        XCTAssertTrue(closeUpdates.isHittable)
+        let updateScreenshot = XCTAttachment(screenshot: app.screenshot())
+        updateScreenshot.name = "Native update screen without inventory reload"
+        updateScreenshot.lifetime = .keepAlways
+        add(updateScreenshot)
+        closeUpdates.tap()
+        // The harness status was already set before opening the update sheet;
+        // retaining it also verifies that closing did not reload the webpage.
+        status("inventory:模拟器测试面霜")
         tap("Test reload page")
         waitForHarness()
         tap("Test inspect inventory")

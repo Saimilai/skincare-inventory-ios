@@ -32,6 +32,12 @@ final class InventoryViewController: UIViewController {
     private var keyboardFrameInScreen: CGRect?
     private var keyboardObservers: [NSObjectProtocol] = []
     private lazy var fileShareCoordinator = FileShareCoordinator(presenter: self)
+    private let updateBar = UIView()
+    private let updateButton = UIButton(type: .system)
+    private lazy var updateChecker = makeInventoryUpdateService()
+    private var didCheckUpdates = false
+    private let lastUpdateCheckKey = "inventory.appUpdate.lastSuccessfulCheck"
+    private let availableUpdateKey = "inventory.appUpdate.availableVersion"
     private let backgroundColor = UIColor(red: 9 / 255, green: 11 / 255, blue: 10 / 255, alpha: 1)
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
@@ -40,8 +46,10 @@ final class InventoryViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = backgroundColor
         overrideUserInterfaceStyle = .dark
+        configureUpdateBar()
         configureWebView()
         configureOverlays()
+        view.bringSubviewToFront(updateBar)
         observeKeyboard()
         if compatibilityScriptAvailable {
             loadWebsite()
@@ -52,10 +60,97 @@ final class InventoryViewController: UIViewController {
     }
 
     deinit {
+        updateChecker.cancel()
         bannerDismissal?.cancel()
         keyboardObservers.forEach { NotificationCenter.default.removeObserver($0) }
         webView?.configuration.userContentController
             .removeScriptMessageHandler(forName: AppConfig.bridgeHandlerName)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !didCheckUpdates else { return }
+        didCheckUpdates = true
+        if let target = UserDefaults.standard.string(forKey: "inventory.appUpdate.pendingVersion") {
+            UserDefaults.standard.removeObject(forKey: "inventory.appUpdate.pendingVersion")
+            let updated = AppConfig.appVersion.compare(target, options: .numeric) != .orderedAscending
+            showNotice(updated
+                ? "App 已更新到 \(AppConfig.appVersion)，请核对库存。"
+                : "上次更新尚未完成。库存仍使用原版本，可在 App 更新中重试。")
+        }
+        // Only check at cold launch, without a modal or page refresh. Recording
+        // is never interrupted, including when returning from the background.
+        let lastCheck = UserDefaults.standard.object(forKey: lastUpdateCheckKey) as? Date
+        if let lastCheck = lastCheck {
+            let age = Date().timeIntervalSince(lastCheck)
+            if age >= 0 && age < 24 * 60 * 60 { return }
+        }
+        updateChecker.check { [weak self] result in
+            guard let self = self, case .success(let release) = result else { return }
+            self.recordAvailableUpdate(release)
+        }
+    }
+
+    private func configureUpdateBar() {
+        updateBar.translatesAutoresizingMaskIntoConstraints = false
+        updateBar.backgroundColor = backgroundColor
+        view.addSubview(updateBar)
+        let version = UILabel()
+        version.translatesAutoresizingMaskIntoConstraints = false
+        version.text = "库存 · \(AppConfig.appVersion)"
+        version.font = .preferredFont(forTextStyle: .caption1)
+        version.adjustsFontForContentSizeCategory = true
+        version.textColor = .secondaryLabel
+        version.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        updateBar.addSubview(version)
+        updateButton.translatesAutoresizingMaskIntoConstraints = false
+        updateButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        updateButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        updateButton.accessibilityIdentifier = "inventory.updates"
+        updateButton.addTarget(self, action: #selector(openUpdates), for: .touchUpInside)
+        updateBar.addSubview(updateButton)
+        refreshUpdateButton()
+        NSLayoutConstraint.activate([
+            updateBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            updateBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            updateBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            updateBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            version.leadingAnchor.constraint(equalTo: updateBar.leadingAnchor, constant: 16),
+            version.centerYAnchor.constraint(equalTo: updateBar.centerYAnchor),
+            version.trailingAnchor.constraint(lessThanOrEqualTo: updateButton.leadingAnchor, constant: -12),
+            updateButton.trailingAnchor.constraint(equalTo: updateBar.trailingAnchor, constant: -16),
+            updateButton.topAnchor.constraint(equalTo: updateBar.topAnchor),
+            updateButton.bottomAnchor.constraint(equalTo: updateBar.bottomAnchor),
+            updateButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        ])
+    }
+
+    private func refreshUpdateButton() {
+        let available = UserDefaults.standard.string(forKey: availableUpdateKey)
+        let hasUpdate = available.map {
+            $0.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil &&
+                $0.compare(AppConfig.appVersion, options: .numeric) == .orderedDescending
+        } ?? false
+        updateButton.setTitle(hasUpdate ? "有新版 · App 更新" : "App 更新", for: .normal)
+    }
+
+    private func recordAvailableUpdate(_ release: AppUpdateRelease?) {
+        UserDefaults.standard.set(Date(), forKey: lastUpdateCheckKey)
+        if let release = release {
+            UserDefaults.standard.set(release.version, forKey: availableUpdateKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: availableUpdateKey)
+        }
+        refreshUpdateButton()
+    }
+
+    @objc private func openUpdates() {
+        guard presentedViewController == nil, !fileShareCoordinator.isBusy else { return }
+        view.endEditing(true)
+        let controller = AppUpdateViewController(service: makeInventoryUpdateService()) { [weak self] release in
+            self?.recordAvailableUpdate(release)
+        }
+        present(controller, animated: true)
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -145,7 +240,7 @@ final class InventoryViewController: UIViewController {
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.topAnchor.constraint(equalTo: updateBar.bottomAnchor),
             bottomConstraint
         ])
     }
@@ -271,7 +366,7 @@ final class InventoryViewController: UIViewController {
         NSLayoutConstraint.activate([
             banner.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
             banner.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            banner.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            banner.topAnchor.constraint(equalTo: updateBar.bottomAnchor, constant: 10),
             banner.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
         ])
     }
