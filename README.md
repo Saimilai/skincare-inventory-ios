@@ -17,11 +17,11 @@ App 和 Safari 的库存、快照与备份状态相互独立，不会自动同�
 
 ## 免费构建
 
-本工作流仅允许**公开仓库**手动触发，使用 GitHub 的标准 `macos-15-intel` runner。该运行器在公开仓库的计算免费，不使用付费 larger runners、开发者证书或签名服务；产物作为 Release 附件交付，不创建 Actions 缓存或上传 Actions artifacts。
+本工作流仅允许**公开仓库**手动触发，使用 GitHub 的标准 `macos-15-intel` runner。该运行器在公开仓库的计算免费，不使用付费 larger runners、开发者证书或签名服务。模拟器验收和设备打包各用一个最长 20 分钟的任务，中间以一个保留 1 天的小型 Actions artifact 传递测试证据。打包任务核对同次运行、源码提交、版本和证据校验值后才生成 IPA；Release 发布成功后立即删除这个临时 artifact，长期产物保存在 Release 附件中。
 
 1. 在公开的 GitHub 仓库中打开 **Actions → Build TrollStore IPA → Run workflow**。
 2. 等待网页测试、Python 单元测试、iOS 18.5 模拟器 UI 测试及设备构建完成。
-3. 在 **Releases → v1.0.0** 下载 IPA、`SHA256SUMS.txt`、`validation.json`、`test-report.md`。同页提供与该提交对应的源码 ZIP。
+3. 在 **Releases → v1.0.0** 下载 IPA、`SHA256SUMS.txt`、`validation.json`、`test-report.md` 和包含模拟器截图的 `simulator-evidence.zip`。同页提供与该提交对应的源码 ZIP。
 
 工作流固定 Xcode 16.4；如果 GitHub 镜像将来移除此版本，构建会失败并要求维护工程，不会自动切换到未知工具链。每次手动运行的构建号递增。同一提交重跑可覆盖附件；源码变化后必须递增工作流中的 App 版本，避免旧 tag 的源码 ZIP 与新 IPA 不一致。
 

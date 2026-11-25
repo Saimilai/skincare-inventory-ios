@@ -449,7 +449,12 @@ extension InventoryViewController: WKUIDelegate {
             return
         }
         let alert = UIAlertController(title: "库存手记", message: String(prompt.prefix(5_000)), preferredStyle: .alert)
-        alert.addTextField { field in field.text = defaultText }
+        alert.addTextField { field in
+            field.text = defaultText
+            field.autocorrectionType = .no
+            field.autocapitalizationType = .none
+            field.accessibilityIdentifier = "inventory.promptInput"
+        }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(nil) })
         alert.addAction(UIAlertAction(title: "确认", style: .default) { [weak alert] _ in
             completionHandler(alert?.textFields?.first?.text ?? "")

@@ -8,19 +8,25 @@
       setTimeout(install, 100); return;
     }
     var api = window.__skincare;
+    var lastJSONExport;
+    var originalCreateObjectURL=URL.createObjectURL.bind(URL);
+    URL.createObjectURL=function(blob) {
+      if(blob.type.split(';')[0]==='application/json')lastJSONExport=blob;
+      return originalCreateObjectURL(blob);
+    };
     var panel = document.createElement('section');
     panel.id = 'inventory-ui-tests';
     panel.setAttribute('aria-label', 'Inventory test harness');
-    panel.style.cssText = 'position:fixed;inset:60px 12px 60px;z-index:2147483647;overflow:auto;background:#101b16;color:white;padding:14px;border:2px solid #a6c7a8;font:16px sans-serif;';
+    panel.style.cssText = 'position:fixed;inset:60px 12px 60px;z-index:2147483647;overflow:auto;background:#101b16;color:white;padding:14px;border:2px solid #a6c7a8;font:16px sans-serif;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:min-content;align-content:start;gap:7px;';
     var status = document.createElement('p');
     status.setAttribute('role', 'status');
-    status.style.cssText = 'min-height:40px;white-space:pre-wrap;';
+    status.style.cssText = 'min-height:40px;white-space:pre-wrap;grid-column:1 / -1;';
     panel.appendChild(status);
     function say(text) { status.textContent = text; }
     function button(label, run) {
       var element = document.createElement('button');
       element.textContent = label;
-      element.style.cssText = 'display:block;width:100%;min-height:44px;margin:7px 0;border:1px solid #667e68;border-radius:6px;color:white;background:#253d2c;font-size:16px;';
+      element.style.cssText = 'display:block;width:100%;min-height:54px;margin:0;border:1px solid #667e68;border-radius:6px;color:white;background:#253d2c;font-size:14px;';
       element.onclick = run;
       panel.appendChild(element);
     }
@@ -65,6 +71,16 @@
     });
     button('Test inspect inventory', function () {
       say('inventory:' + api.state().products.map(function(p){return p.name;}).join('|'));
+    });
+    button('Test import empty inventory', function () {
+      var empty={app:fixture.app,v:1,products:[],logs:[],trash:[]};
+      var file=new File([JSON.stringify(empty)],'empty.json',{type:'application/json'});
+      document.getElementById('file-input').onchange({target:{files:[file],value:''}});
+    });
+    button('Test restore last JSON export', function () {
+      if(!lastJSONExport){say('json:no-export');return;}
+      var file=new File([lastJSONExport],'restore.json',{type:'application/json'});
+      document.getElementById('file-input').onchange({target:{files:[file],value:''}});
     });
     button('Test reload page', function () {location.reload();});
     button('Test hide harness', function () {panel.remove();});
