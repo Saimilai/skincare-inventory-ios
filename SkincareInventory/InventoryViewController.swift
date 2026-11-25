@@ -219,7 +219,7 @@ final class InventoryViewController: UIViewController {
         let spinner = UIActivityIndicatorView(style: .large)
         spinner.startAnimating()
         let loadingLabel = UILabel()
-        loadingLabel.text = "正在打开库存手记…"
+        loadingLabel.text = "正在打开库存…"
         loadingLabel.textColor = .secondaryLabel
         loadingLabel.font = .preferredFont(forTextStyle: .body)
         loadingLabel.adjustsFontForContentSizeCategory = true
@@ -231,7 +231,7 @@ final class InventoryViewController: UIViewController {
         addCentered(loadingStack, to: loadingOverlay)
 
         let title = UILabel()
-        title.text = "暂时无法打开库存手记"
+        title.text = "暂时无法打开库存"
         title.font = .preferredFont(forTextStyle: .headline)
         title.adjustsFontForContentSizeCategory = true
         title.textAlignment = .center
@@ -522,7 +522,7 @@ extension InventoryViewController: WKUIDelegate {
             completionHandler()
             return
         }
-        let alert = UIAlertController(title: "库存手记", message: String(message.prefix(5_000)), preferredStyle: .alert)
+        let alert = UIAlertController(title: "库存", message: String(message.prefix(5_000)), preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler() })
         present(alert, animated: true)
     }
@@ -537,7 +537,7 @@ extension InventoryViewController: WKUIDelegate {
             completionHandler(false)
             return
         }
-        let alert = UIAlertController(title: "库存手记", message: String(message.prefix(5_000)), preferredStyle: .alert)
+        let alert = UIAlertController(title: "库存", message: String(message.prefix(5_000)), preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(false) })
         alert.addAction(UIAlertAction(title: "确认", style: .default) { _ in completionHandler(true) })
         present(alert, animated: true)
@@ -554,7 +554,7 @@ extension InventoryViewController: WKUIDelegate {
             completionHandler(nil)
             return
         }
-        let alert = UIAlertController(title: "库存手记", message: String(prompt.prefix(5_000)), preferredStyle: .alert)
+        let alert = UIAlertController(title: "库存", message: String(prompt.prefix(5_000)), preferredStyle: .alert)
         alert.addTextField { field in
             field.text = defaultText
             field.autocorrectionType = .no

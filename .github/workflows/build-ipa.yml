@@ -98,14 +98,14 @@ jobs:
             gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$tag" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "库存手记 ${APP_VERSION} · TrollStore" \
+              --title "库存 ${APP_VERSION} · TrollStore" \
               --notes-file build/artifacts/test-report.md \
               --draft=false --latest
           else
             gh release create "$tag" "${assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "库存手记 ${APP_VERSION} · TrollStore" \
+              --title "库存 ${APP_VERSION} · TrollStore" \
               --notes-file build/artifacts/test-report.md
           fi
 

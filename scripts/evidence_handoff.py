@@ -215,7 +215,7 @@ def report():
         run_url = "https://github.com/{}/actions/runs/{}".format(
             os.environ["GITHUB_REPOSITORY"], metadata["run_id"])
     lines = [
-        "# 库存手记 IPA 验证报告", "",
+        "# 库存 IPA 验证报告", "",
         "- App 版本：{}（构建 {}）".format(metadata["app_version"], metadata["build_number"]),
         "- 首个正式版本；包含表单录入时的键盘安全区域适配。",
         "- 源码提交：{}".format(metadata["source_commit"]),
