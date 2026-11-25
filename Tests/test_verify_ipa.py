@@ -90,7 +90,7 @@ class IPAValidationTests(unittest.TestCase):
         info = {
             "CFBundlePackageType": "APPL",
             "CFBundleIdentifier": "io.github.saimilai.skincareinventory",
-            "CFBundleShortVersionString": "1.0.1",
+            "CFBundleShortVersionString": "1.0.0",
             "CFBundleVersion": "27",
             "MinimumOSVersion": "14.0",
             "CFBundleSupportedPlatforms": ["iPhoneOS"],

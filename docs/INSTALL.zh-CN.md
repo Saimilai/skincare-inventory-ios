@@ -5,7 +5,7 @@
 ## 第一次安装
 
 1. 在 Safari 打开目前使用的库存网站，在“我的”中导出 **JSON 备份**，保存到“文件”或网盘。确认文件存在；Excel 不能代替恢复用 JSON。
-2. 从本仓库的 **Releases** 下载 `SkincareInventory-1.0.1-TrollStore.ipa`。不要把同页源码 ZIP 当成安装包。
+2. 从本仓库的 **Releases** 下载 `SkincareInventory-1.0.0-TrollStore.ipa`。不要把同页源码 ZIP 当成安装包。
 3. 在 TrollStore 点右上角“＋”，选择 IPA 并安装；或者从“文件”把 IPA 分享给 TrollStore。
 4. 打开桌面的“库存手记”，联网等待网页加载。首次为空库存属于正常情况，Safari 的数据不会自动进入 App。
 5. 在 App 的“我的 → 导入备份”选择之前保存的 JSON。阅读覆盖确认后导入，再核对商品数量、批次、日期和使用记录。
