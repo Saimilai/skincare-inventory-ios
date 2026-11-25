@@ -47,14 +47,18 @@ final class SkincareInventoryUITests: XCTestCase {
     }
 
     private func cancelShareSheet() {
-        // UIDocumentInteractionController exposes a stable system identifier
-        // for its close button. Query it directly because localized labels and
-        // remote share-sheet accessibility snapshots can arrive later.
-        let close = app.buttons["header.closeButton"]
-        let found = close.waitForExistence(timeout: 10)
-        if !found { captureDiagnostics("Missing system share sheet") }
-        XCTAssertTrue(found, "System activity sheet should have a close control.")
-        close.tap()
+        // The iOS activity sheet is visible above the app but its controls are
+        // outside this app's XCTest accessibility tree on the hosted runner.
+        // Tap the close control at its stable upper-right position instead of
+        // waiting on an element XCTest can never expose through `app`.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.535)).tap()
+        let harness = app.buttons["Test confirm"]
+        let returned = NSPredicate { _, _ in harness.isHittable }
+        let result = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: returned, object: nil)], timeout: 10
+        )
+        if result != .completed { captureDiagnostics("Share sheet did not return to the app") }
+        XCTAssertEqual(result, .completed, "Cancelling the system share sheet must return to the app.")
     }
 
     private func assertEntryFitsVisibleWebView(keyboardVisible: Bool) {
