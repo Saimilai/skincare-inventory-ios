@@ -45,12 +45,24 @@
     var filename = String(proposedName || '').replace(/\\/g, '/').split('/').pop()
       .replace(/[\u0000-\u001f\u007f:]/g, '_').trim();
     var extension = /\.(json|xlsx)$/i.exec(filename);
-    if (!extension || filename.length === extension[0].length) {
+    if (!extension || filename.length === extension[0].length || filename.charAt(0) === '.') {
       throw failure('NotSupportedError', '仅支持 JSON 备份和 Excel 表格。');
     }
     var suffix = extension[0].toLowerCase();
     var basename = filename.slice(0, -extension[0].length);
-    filename = Array.from(basename).slice(0, 150).join('') + suffix;
+    // Native validation uses UTF-8 bytes. Count complete Unicode code points so
+    // long Chinese names and emoji fit the same limit without split surrogates.
+    var remainingBytes = 240 - suffix.length;
+    var safeBasename = '';
+    var characters = Array.from(basename);
+    for (var i = 0; i < characters.length; i++) {
+      var codePoint = characters[i].codePointAt(0);
+      var byteLength = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+      if (byteLength > remainingBytes) break;
+      safeBasename += characters[i];
+      remainingBytes -= byteLength;
+    }
+    filename = safeBasename + suffix;
     var expectedMIME = suffix === '.json' ? JSON_MIME : XLSX_MIME;
     var declaredMIME = String(blob.type || '').split(';')[0].trim().toLowerCase();
     if (declaredMIME && declaredMIME !== 'application/octet-stream' && declaredMIME !== expectedMIME) {
@@ -184,7 +196,15 @@
         if (!Array.isArray(data.files) || data.files.length !== 1) {
           return Promise.reject(failure('NotSupportedError', '每次仅支持分享一个备份或表格。'));
         }
-        return sendFile(data.files[0], data.files[0].name);
+        return sendFile(data.files[0], data.files[0].name).catch(function (error) {
+          // The website retries non-AbortError failures as a Blob download.
+          // Native failures already have a visible error banner, so suppress
+          // that fallback instead of reopening a second native operation.
+          if (error && error.inventoryNativeHandled) {
+            throw failure('AbortError', error.message);
+          }
+          throw error;
+        });
       }
       return originalShare ? originalShare(data) : Promise.reject(failure('NotSupportedError', '当前内容不支持分享。'));
     }

@@ -44,6 +44,7 @@ jobs:
             "build/artifacts/SHA256SUMS.txt"
             "build/artifacts/validation.json"
             "build/artifacts/test-report.md"
+            "build/artifacts/simulator-evidence.zip"
           )
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             release_commit="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${tag}" --jq .sha)"

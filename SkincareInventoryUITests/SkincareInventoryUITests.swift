@@ -8,7 +8,19 @@ final class SkincareInventoryUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["-ui-testing"]
         app.launch()
-        XCTAssertTrue(app.buttons["Test confirm"].waitForExistence(timeout: 45), "The genuine website and document-end test harness must load.")
+        waitForHarness()
+    }
+
+    private func waitForHarness() {
+        let ready = app.buttons["Test confirm"].waitForExistence(timeout: 45)
+        if !ready {
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = "Website load failure"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            print(app.debugDescription)
+        }
+        XCTAssertTrue(ready, "The genuine website and document-end test harness must load.")
     }
 
     private func status(_ text: String) {
@@ -17,8 +29,12 @@ final class SkincareInventoryUITests: XCTestCase {
 
     private func tap(_ title: String) {
         let button = app.buttons[title]
-        if !button.isHittable { app.swipeUp() }
         XCTAssertTrue(button.waitForExistence(timeout: 5), title)
+        for _ in 0..<4 {
+            if button.isHittable { break }
+            app.webViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(button.isHittable, title)
         button.tap()
     }
 
@@ -29,16 +45,23 @@ final class SkincareInventoryUITests: XCTestCase {
     }
 
     func testPersistentStorageSurvivesRelaunchAndBackground() {
-        tap("Test persist fixture")
-        status("persisted:模拟器测试面霜")
+        tap("Test import fixture")
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
+        app.alerts.buttons["确认"].tap()
+        tap("Test inspect inventory")
+        status("inventory:模拟器测试面霜")
+        tap("Test reload page")
+        waitForHarness()
+        tap("Test inspect inventory")
+        status("inventory:模拟器测试面霜")
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.buttons["Test read persisted fixture"].waitForExistence(timeout:45))
-        tap("Test read persisted fixture")
-        status("persisted:模拟器测试面霜")
+        waitForHarness()
+        tap("Test inspect inventory")
+        status("inventory:模拟器测试面霜")
         XCUIDevice.shared.press(.home)
         app.activate()
-        status("persisted:模拟器测试面霜")
+        status("inventory:模拟器测试面霜")
     }
 
     func testConfirmAndPromptCompletionAndCancellation() {
@@ -53,8 +76,12 @@ final class SkincareInventoryUITests: XCTestCase {
         status("prompt:null")
         tap("Test prompt")
         let field=app.alerts.textFields.firstMatch
-        field.tap()
-        field.typeText("-edited")
+        XCTAssertEqual(field.value as? String, "fixture")
+        // Put the caret after the default value before replacing it. A normal
+        // tap can leave UIAlertController's default text selected or move it.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7))
+        field.typeText("fixture-edited")
         app.alerts.buttons["确认"].tap()
         status("prompt:fixture-edited")
     }
@@ -70,10 +97,14 @@ final class SkincareInventoryUITests: XCTestCase {
     }
 
     func testJSONAndExcelBlobDownloadsReachSystemShare() {
+        tap("Test import fixture")
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 10))
+        app.alerts.buttons["确认"].tap()
         tap("Test download JSON")
         cancelShareSheet()
         tap("Test download XLSX")
         cancelShareSheet()
+        status("xlsx:verified-name-stock-cost")
     }
 
     func testRealImportValidationAndCancellation() {
@@ -94,6 +125,21 @@ final class SkincareInventoryUITests: XCTestCase {
         tap("Test hide harness")
         XCTAssertTrue(app.webViews.firstMatch.exists)
         XCTAssertTrue(app.staticTexts["库存清单"].waitForExistence(timeout:10))
+        tap("新增物品")
+        tap("下一步 · 核对商品")
+        let name = app.webViews.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("Simulator entry cream")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertTrue(app.buttons["下一步 · 核对价格"].isHittable, "The entry footer must stay above the keyboard.")
+        let keyboard = XCTAttachment(screenshot: app.screenshot())
+        keyboard.name = "Inventory entry with keyboard"
+        keyboard.lifetime = .keepAlways
+        add(keyboard)
+        tap("下一步 · 核对价格")
+        tap("确认并加入库存")
+        XCTAssertTrue(app.staticTexts["Simulator entry cream"].waitForExistence(timeout:10))
         let screenshot = XCTAttachment(screenshot:app.screenshot())
         screenshot.name = "Inventory real website"
         screenshot.lifetime = .keepAlways

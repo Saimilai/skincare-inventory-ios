@@ -1,4 +1,6 @@
 import XCTest
+import UIKit
+import WebKit
 @testable import SkincareInventory
 
 final class SkincareInventoryTests: XCTestCase {
@@ -39,5 +41,97 @@ final class SkincareInventoryTests: XCTestCase {
     func testRejectsOversizedExport() {
         let oversized = Data(repeating:65,count:AppConfig.maximumExportFileBytes+1).base64EncodedString()
         XCTAssertThrowsError(try FileShareCoordinator.validate(filename:"backup.json", mimeType:"application/json", base64Data:oversized))
+    }
+
+    @MainActor
+    func testNetworkFailureShowsErrorAndRetryPreservesPersistentStore() throws {
+        let controller = InventoryViewController()
+        controller.loadViewIfNeeded()
+        let webView = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? WKWebView }.first)
+        webView.stopLoading()
+        defer {
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+        }
+
+        let store = webView.configuration.websiteDataStore
+        XCTAssertTrue(store.isPersistent)
+        XCTAssertTrue(store === WKWebsiteDataStore.default())
+
+        let delegate = try XCTUnwrap(webView.navigationDelegate)
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+        delegate.webView?(webView, didFailProvisionalNavigation: nil, withError: error)
+
+        let message: UILabel = try XCTUnwrap(findView("inventory.error", in: controller.view))
+        let retry: UIButton = try XCTUnwrap(findView("inventory.retry", in: controller.view))
+        let loading: UILabel = try XCTUnwrap(findView("inventory.loading", in: controller.view))
+        XCTAssertTrue(isVisible(message))
+        XCTAssertTrue(isVisible(retry))
+        XCTAssertFalse(isVisible(loading))
+        XCTAssertFalse(message.text?.isEmpty ?? true)
+
+        retry.sendActions(for: .touchUpInside)
+
+        XCTAssertFalse(isVisible(message), "Retry should replace the error overlay with loading UI.")
+        XCTAssertTrue(isVisible(loading))
+        XCTAssertTrue(webView.configuration.websiteDataStore === store)
+        XCTAssertTrue(webView.configuration.websiteDataStore.isPersistent)
+    }
+
+    @MainActor
+    func testTerminatedWebContentProcessShowsRecoveryAndAllowsRetry() throws {
+        let controller = InventoryViewController()
+        controller.loadViewIfNeeded()
+        let webView = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? WKWebView }.first)
+        webView.stopLoading()
+        defer {
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+        }
+
+        let store = webView.configuration.websiteDataStore
+        let delegate = try XCTUnwrap(webView.navigationDelegate)
+        delegate.webViewWebContentProcessDidTerminate?(webView)
+
+        let message: UILabel = try XCTUnwrap(findView("inventory.error", in: controller.view))
+        let retry: UIButton = try XCTUnwrap(findView("inventory.retry", in: controller.view))
+        let resume: UIButton = try XCTUnwrap(findView("inventory.continue", in: controller.view))
+        let loading: UILabel = try XCTUnwrap(findView("inventory.loading", in: controller.view))
+        XCTAssertTrue(isVisible(message))
+        XCTAssertTrue(isVisible(retry))
+        XCTAssertFalse(isVisible(resume), "A terminated process cannot resume its previous live page.")
+        XCTAssertFalse(isVisible(loading))
+        XCTAssertFalse(message.text?.isEmpty ?? true)
+
+        retry.sendActions(for: .touchUpInside)
+
+        XCTAssertFalse(isVisible(message))
+        XCTAssertTrue(isVisible(loading))
+        XCTAssertTrue(webView.configuration.websiteDataStore === store)
+        XCTAssertTrue(store === WKWebsiteDataStore.default())
+        XCTAssertTrue(store.isPersistent)
+    }
+
+    @MainActor
+    private func findView<T: UIView>(_ identifier: String, in root: UIView) -> T? {
+        if root.accessibilityIdentifier == identifier, let match = root as? T {
+            return match
+        }
+        for child in root.subviews {
+            if let match: T = findView(identifier, in: child) { return match }
+        }
+        return nil
+    }
+
+    @MainActor
+    private func isVisible(_ view: UIView) -> Bool {
+        var current: UIView? = view
+        while let ancestor = current {
+            if ancestor.isHidden || ancestor.alpha <= 0.01 { return false }
+            current = ancestor.superview
+        }
+        return true
     }
 }

@@ -29,14 +29,6 @@
       products: [{id:991001,name:'模拟器测试面霜',brand:'虚构品牌',category:'面霜',unit:'瓶',spec:'50g',qtyText:'1瓶',sealed:1,inUse:0,used:0,buyDate:'2026-11-11',expiryDate:'2029-08-30',price:{cost:50},note:'仅用于自动测试'}],
       logs: [], trash: []
     };
-    button('Test persist fixture', function () {
-      localStorage.setItem('inventory.wrapper.ui-test.v1', JSON.stringify(fixture));
-      say('persisted:模拟器测试面霜');
-    });
-    button('Test read persisted fixture', function () {
-      var value = JSON.parse(localStorage.getItem('inventory.wrapper.ui-test.v1') || 'null');
-      say(value ? 'persisted:' + value.products[0].name : 'persisted:empty');
-    });
     button('Test confirm', function () { say('confirm:' + window.confirm('Test confirmation')); });
     button('Test prompt', function () { say('prompt:' + String(window.prompt('Test remark', 'fixture'))); });
     button('Test share JSON', function () {
@@ -45,12 +37,19 @@
       navigator.share({files:[file]}).then(function () {say('share:shared');},function(error){say('share:'+error.name);});
     });
     button('Test download JSON', function () {
-      var anchor = document.createElement('a');
-      anchor.href = URL.createObjectURL(new Blob([JSON.stringify(fixture)],{type:'application/json'}));
-      anchor.download='测试下载.json'; anchor.click(); URL.revokeObjectURL(anchor.href);
+      document.getElementById('btn-export').click();
     });
     button('Test download XLSX', async function () {
       var blob=await InventoryExcel.create(api.excelRows());
+      var zip=await JSZip.loadAsync(blob);
+      var parser=new DOMParser();
+      var inventory=parser.parseFromString(await zip.file('xl/worksheets/sheet1.xml').async('string'),'application/xml');
+      var prices=parser.parseFromString(await zip.file('xl/worksheets/sheet2.xml').async('string'),'application/xml');
+      function cell(doc, ref) {var node=doc.querySelector('c[r="'+ref+'"]');return node ? node.textContent : '';}
+      if(cell(inventory,'B2')!=='模拟器测试面霜' || cell(inventory,'I2')!=='1' || cell(prices,'W2')!=='50') {
+        say('xlsx:content-mismatch'); return;
+      }
+      say('xlsx:verified-name-stock-cost');
       var anchor=document.createElement('a'); anchor.href=URL.createObjectURL(blob);
       anchor.download='测试库存.xlsx'; anchor.click(); URL.revokeObjectURL(anchor.href);
     });
@@ -67,6 +66,7 @@
     button('Test inspect inventory', function () {
       say('inventory:' + api.state().products.map(function(p){return p.name;}).join('|'));
     });
+    button('Test reload page', function () {location.reload();});
     button('Test hide harness', function () {panel.remove();});
     document.body.appendChild(panel);
     say('harness:ready');

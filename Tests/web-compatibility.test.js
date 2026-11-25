@@ -172,7 +172,7 @@ test('a native error releases the bridge for a subsequent share', async () => {
   const app = browser();
   const file = new File(['{}'], '备份.json', { type: 'application/json' });
   const first = app.context.navigator.share({ files: [file] });
-  const rejection = assert.rejects(first, { name: 'OperationError', message: '测试错误' });
+  const rejection = assert.rejects(first, { name: 'AbortError', message: '测试错误' });
   await until(() => app.messages.length === 1);
   app.complete('error', 0, '测试错误');
   await rejection;
@@ -183,13 +183,44 @@ test('a native error releases the bridge for a subsequent share', async () => {
   await second;
 });
 
+test('a native share error does not activate the website fallback download', async () => {
+  const app = browser();
+  const file = new File(['{}'], '备份.json', { type: 'application/json' });
+  let fallbackDownloads = 0;
+  const sharing = app.context.navigator.share({ files: [file] }).catch(error => {
+    if (error.name !== 'AbortError') {
+      fallbackDownloads++;
+      app.download(file, file.name);
+    }
+  });
+  await until(() => app.messages.length === 1);
+  app.complete('error', 0, '系统分享失败');
+  await sharing;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fallbackDownloads, 0);
+  assert.equal(app.messages.length, 1);
+  assert.equal(app.alerts.length, 0, 'native errors already have a native banner');
+});
+
+test('a native download error does not duplicate its visible error banner', async () => {
+  const app = browser();
+  app.download(new Blob(['{}'], { type: 'application/json' }), '备份.json');
+  await until(() => app.messages.length === 1);
+  app.complete('error', 0, '系统分享失败');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.alerts.length, 0);
+  assert.equal(app.warnings.length, 1);
+});
+
 test('rejects empty, unsupported, mismatched and multi-file shares without native access', async () => {
   const app = browser();
   const files = [
     new File([], 'empty.json', { type: 'application/json' }),
     new File(['x'], 'photo.png', { type: 'image/png' }),
     new File(['{}'], 'fake.xlsx', { type: 'application/json' }),
-    new File(['{}'], '.json', { type: 'application/json' })
+    new File(['{}'], '.json', { type: 'application/json' }),
+    new File(['{}'], '.hidden.json', { type: 'application/json' }),
+    new File(['{}'], '...json', { type: 'application/json' })
   ];
   for (const file of files) {
     assert.equal(app.context.navigator.canShare({ files: [file] }), false);
@@ -216,6 +247,27 @@ test('sanitizes suggested filesystem paths and infers MIME for generic Blobs', a
   await until(() => app.messages.length === 1);
   assert.equal(app.messages[0].filename, '中文_备份.json');
   assert.equal(app.messages[0].mimeType, 'application/json');
+  app.complete();
+});
+
+test('truncates long Chinese filenames at the native 240 UTF-8 byte boundary', async () => {
+  const app = browser();
+  app.download(new Blob(['{}'], { type: 'application/json' }), '霜'.repeat(78) + 'a' + '霜'.repeat(20) + '.JSON');
+  await until(() => app.messages.length === 1);
+  const filename = app.messages[0].filename;
+  assert.equal(filename, '霜'.repeat(78) + 'a.json');
+  assert.equal(Buffer.byteLength(filename, 'utf8'), 240);
+  app.complete();
+});
+
+test('keeps complete emoji when truncating a long filename', async () => {
+  const app = browser();
+  app.download(new Blob(['{}'], { type: 'application/json' }), '🧴'.repeat(58) + 'abc' + '🧴'.repeat(20) + '.json');
+  await until(() => app.messages.length === 1);
+  const filename = app.messages[0].filename;
+  assert.equal(filename, '🧴'.repeat(58) + 'abc.json');
+  assert.equal(Buffer.byteLength(filename, 'utf8'), 240);
+  assert.equal(Buffer.from(filename, 'utf8').toString('utf8'), filename);
   app.complete();
 });
 
