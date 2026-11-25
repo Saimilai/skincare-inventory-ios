@@ -47,8 +47,11 @@ final class SkincareInventoryUITests: XCTestCase {
     }
 
     private func cancelShareSheet() {
-        let close = app.buttons.matching(NSPredicate(format:"label == 'Close' OR label == '关闭' OR label == 'Cancel' OR label == '取消'")).firstMatch
-        let found = close.waitForExistence(timeout: 20)
+        // UIDocumentInteractionController exposes a stable system identifier
+        // for its close button. Query it directly because localized labels and
+        // remote share-sheet accessibility snapshots can arrive later.
+        let close = app.buttons["header.closeButton"]
+        let found = close.waitForExistence(timeout: 10)
         if !found { captureDiagnostics("Missing system share sheet") }
         XCTAssertTrue(found, "System activity sheet should have a close control.")
         close.tap()
