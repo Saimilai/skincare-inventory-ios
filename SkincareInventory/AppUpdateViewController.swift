@@ -324,6 +324,21 @@ final class AppUpdateViewController: UIViewController, UIDocumentInteractionCont
             status.text = "更新包已被系统清理，请重新下载。"
             return
         }
+        guard let package = verifiedPackage,
+              let data = try? Data(contentsOf: file, options: [.mappedIfSafe]) else {
+            status.text = "更新包无法读取，请重新下载。"
+            return
+        }
+        var validationError: NSError?
+        guard InventoryValidateUpdateData(data, package.version, package.sha256,
+                                          numericCast(package.size), &validationError) else {
+            verifiedPackage = nil
+            installButton.isHidden = true
+            handoffButton.isHidden = true
+            downloadButton.isHidden = release == nil
+            status.text = validationError?.localizedDescription ?? "更新包安全校验失败，请重新下载。"
+            return
+        }
         let controller = UIDocumentInteractionController(url: file)
         controller.uti = "com.apple.itunes.ipa"
         controller.name = "库存更新"
