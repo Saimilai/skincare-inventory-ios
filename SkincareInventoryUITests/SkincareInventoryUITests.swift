@@ -47,18 +47,21 @@ final class SkincareInventoryUITests: XCTestCase {
     }
 
     private func cancelShareSheet() {
-        // The iOS activity sheet is visible above the app but its controls are
-        // outside this app's XCTest accessibility tree on the hosted runner.
-        // Tap the close control at its stable upper-right position instead of
-        // waiting on an element XCTest can never expose through `app`.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.502)).tap()
-        let harness = app.buttons["Test confirm"]
-        let returned = NSPredicate { _, _ in harness.isHittable }
+        // The system share sheet's close control is exposed through the app's
+        // remote accessibility hierarchy. A web button can remain hittable
+        // underneath the sheet, so it cannot prove that the sheet was closed.
+        let closeButton = app.buttons["header.closeButton"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 10), "The native share sheet must be visible.")
+        XCTAssertTrue(closeButton.isHittable, "The share sheet close control must be available.")
+        closeButton.tap()
+        let dismissed = NSPredicate { _, _ in
+            !closeButton.exists && !self.app.otherElements["ShareSheet.RemoteContainerView"].exists
+        }
         let result = XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: returned, object: nil)], timeout: 10
+            for: [XCTNSPredicateExpectation(predicate: dismissed, object: nil)], timeout: 10
         )
-        if result != .completed { captureDiagnostics("Share sheet did not return to the app") }
-        XCTAssertEqual(result, .completed, "Cancelling the system share sheet must return to the app.")
+        if result != .completed { captureDiagnostics("Share sheet did not dismiss") }
+        XCTAssertEqual(result, .completed, "The native share sheet must disappear before the next app action.")
     }
 
     private func assertEntryFitsVisibleWebView(keyboardVisible: Bool) {
