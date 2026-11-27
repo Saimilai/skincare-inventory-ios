@@ -12,6 +12,8 @@ App 和 Safari 的库存、快照与备份状态相互独立，不会自动同�
 
 从本仓库的 **Releases** 下载 `SkincareInventory-1.0.1-TrollStore.ipa`，先在 TrollStore 中覆盖安装一次。已经安装 `1.0.0` 的用户需要这次手动覆盖安装，之后即可在 App 内确认后续更新。完整步骤见 [巨魔安装说明](docs/INSTALL.zh-CN.md) 和 [App 内更新说明](docs/SELF-UPDATE.md)。
 
+长期维护边界见 [维护说明](docs/MAINTENANCE.md)。
+
 - 支持 arm64、iOS 14.0 及以上的设备构建；能否用巨魔安装仍取决于设备系统是否受 TrollStore 支持。
 - JSON 备份、Excel 导出与分享接入 iOS 的文件/分享界面，JSON 导入沿用网页的内容校验和覆盖确认。
 - 网页中的备份时间沿用现有网站语义：生成文件或交给系统分享时就可能更新，不能证明文件已存入网盘。请以“文件”或网盘里实际存在、能打开的 JSON 为准。
